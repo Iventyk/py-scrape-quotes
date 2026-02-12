@@ -1,8 +1,9 @@
 import csv
-from dataclasses import dataclass, fields, astuple
+from dataclasses import dataclass, fields
 
 import requests
 from bs4 import BeautifulSoup, Tag
+from urllib.parse import urljoin
 
 
 BASE_URL = "https://quotes.toscrape.com/"
@@ -31,30 +32,40 @@ def get_quotes() -> list[Quote]:
     current_page_url = BASE_URL
 
     while current_page_url:
-        text = requests.get(current_page_url).text
-        soup = BeautifulSoup(text, "html.parser")
+        response = requests.get(current_page_url)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
         quotes = soup.select(".quote")
         all_quotes.extend(parse_single_quote(quote) for quote in quotes)
 
         next_page = soup.select_one(".next a")
         if next_page:
-            next_page_url = next_page["href"]
-            current_page_url = BASE_URL.rstrip("/") + next_page_url
+            current_page_url = urljoin(BASE_URL, next_page["href"])
         else:
             current_page_url = None
 
     return all_quotes
 
 
-def write_quotes_to_csv(quotes: list[Quote]) -> None:
-    with open("result.csv", "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
+def write_quotes_to_csv(
+    quotes: list[Quote],
+    output_csv_path: str,
+) -> None:
+    with open(output_csv_path, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
         writer.writerow(QUOTES_FIELDS)
-        writer.writerows([astuple(quote) for quote in quotes])
+        writer.writerows(
+            [
+                (quote.text, quote.author, ";".join(quote.tags))
+                for quote in quotes
+            ]
+        )
 
 
 def main(output_csv_path: str) -> None:
-    write_quotes_to_csv(get_quotes())
+    quotes = get_quotes()
+    write_quotes_to_csv(quotes, output_csv_path)
 
 
 if __name__ == "__main__":
